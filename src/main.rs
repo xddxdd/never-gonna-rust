@@ -1,0 +1,146 @@
+use rand::Rng;
+use std::io::{self, Write};
+
+const NEVER: &[u8] = include_bytes!("../music/never.wav");
+const GONNA: &[u8] = include_bytes!("../music/gonna.wav");
+const GIVE: &[u8] = include_bytes!("../music/give.wav");
+const LET: &[u8] = include_bytes!("../music/let.wav");
+const YOU1: &[u8] = include_bytes!("../music/you1.wav");
+const YOU2: &[u8] = include_bytes!("../music/you2.wav");
+const YOU3: &[u8] = include_bytes!("../music/you3.wav");
+const UP: &[u8] = include_bytes!("../music/up.wav");
+const DOWN: &[u8] = include_bytes!("../music/down.wav");
+const RUN: &[u8] = include_bytes!("../music/run.wav");
+const AROUND: &[u8] = include_bytes!("../music/around.wav");
+const AND: &[u8] = include_bytes!("../music/and.wav");
+const DESERT: &[u8] = include_bytes!("../music/desert.wav");
+const MAKE: &[u8] = include_bytes!("../music/make.wav");
+const CRY: &[u8] = include_bytes!("../music/cry.wav");
+const SAY: &[u8] = include_bytes!("../music/say.wav");
+const GOODBYE: &[u8] = include_bytes!("../music/goodbye.wav");
+const TELL: &[u8] = include_bytes!("../music/tell.wav");
+const ALIE: &[u8] = include_bytes!("../music/alie.wav");
+const HURT: &[u8] = include_bytes!("../music/hurt.wav");
+
+#[derive(Clone, Copy, PartialEq)]
+enum State {
+    Never,
+    Gonna,
+    Give,
+    Let,
+    You,
+    You1,
+    You2,
+    Up,
+    Down,
+    Run,
+    Around,
+    And,
+    Desert,
+    Make,
+    Cry,
+    Say,
+    Goodbye,
+    Tell,
+    Alie,
+    Hurt,
+}
+
+impl State {
+    fn wav_data(&self) -> &[u8] {
+        match self {
+            State::Never => NEVER,
+            State::Gonna => GONNA,
+            State::Give => GIVE,
+            State::Let => LET,
+            State::You => YOU1,
+            State::You1 => YOU2,
+            State::You2 => YOU3,
+            State::Up => UP,
+            State::Down => DOWN,
+            State::Run => RUN,
+            State::Around => AROUND,
+            State::And => AND,
+            State::Desert => DESERT,
+            State::Make => MAKE,
+            State::Cry => CRY,
+            State::Say => SAY,
+            State::Goodbye => GOODBYE,
+            State::Tell => TELL,
+            State::Alie => ALIE,
+            State::Hurt => HURT,
+        }
+    }
+}
+
+fn extract_pcm_data(wav_bytes: &[u8]) -> Vec<u8> {
+    let data_str = b"data";
+    let mut pos = 12;
+    while pos + 8 <= wav_bytes.len() {
+        let chunk_id = &wav_bytes[pos..pos + 4];
+        let chunk_size = u32::from_le_bytes([
+            wav_bytes[pos + 4],
+            wav_bytes[pos + 5],
+            wav_bytes[pos + 6],
+            wav_bytes[pos + 7],
+        ]);
+        if chunk_id == data_str {
+            let start = pos + 8;
+            let end = start + chunk_size as usize;
+            return wav_bytes[start..end].to_vec();
+        }
+        pos += 8 + chunk_size as usize;
+        if pos % 2 != 0 {
+            pos += 1;
+        }
+    }
+    panic!("No data chunk found in WAV file");
+}
+
+fn main() {
+    let stdout = io::stdout();
+    let mut out = io::BufWriter::new(stdout.lock());
+
+    let mut rng = rand::thread_rng();
+    let mut state = State::Never;
+
+    loop {
+        let pcm = extract_pcm_data(state.wav_data());
+        out.write_all(&pcm).unwrap();
+        out.flush().unwrap();
+
+        state = match state {
+            State::Never => State::Gonna,
+            State::Gonna => match rng.gen_range(0..6) {
+                0 => State::Say,
+                1 => State::Run,
+                2 => State::Tell,
+                3 => State::Make,
+                4 => State::Give,
+                _ => State::Let,
+            },
+            State::Give | State::Make => State::You,
+            State::You => match rng.gen_range(0..2) {
+                0 => State::Cry,
+                _ => State::Up,
+            },
+            State::Let => State::You2,
+            State::You2 => State::Down,
+            State::Run => State::Around,
+            State::Around => State::And,
+            State::And => match rng.gen_range(0..2) {
+                0 => State::Desert,
+                _ => State::Hurt,
+            },
+            State::Desert | State::Hurt => State::You1,
+            State::Say => State::Goodbye,
+            State::Tell => State::Alie,
+            State::Alie => State::And,
+            State::Goodbye => State::Never,
+            State::Down => State::Never,
+            State::Cry => State::Never,
+            State::Up => State::Never,
+            State::You1 => State::Never,
+        };
+    }
+}
