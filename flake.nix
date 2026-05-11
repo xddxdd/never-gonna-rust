@@ -40,6 +40,7 @@
               rustToolchain
               cargo-watch
               rust-analyzer
+              alsa-utils
             ];
             RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
           };
