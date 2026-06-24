@@ -1,6 +1,7 @@
 use rand::Rng;
 use std::io::{self, Write};
 use std::os::unix::io::AsRawFd;
+use std::time::{Duration, Instant};
 
 const NEVER: &[u8] = include_bytes!("../music/never.wav");
 const GONNA: &[u8] = include_bytes!("../music/gonna.wav");
@@ -111,7 +112,7 @@ fn stereo_to_mono(stereo: &[u8]) -> Vec<u8> {
     mono
 }
 
-fn drain_stdin() -> bool {
+fn drain_stdin() {
     let fd = io::stdin().as_raw_fd();
     let mut buf = [0u8; 1024];
     loop {
@@ -127,20 +128,14 @@ fn drain_stdin() -> bool {
                 std::ptr::null_mut(),
                 &mut timeout,
             );
-            if ret == 0 {
-                return true;
-            }
-            if ret < 0 {
-                return false;
+            if ret <= 0 {
+                return;
             }
         }
         unsafe {
             let n = libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len());
-            if n == 0 {
-                return false;
-            }
-            if n < 0 {
-                return false;
+            if n <= 0 {
+                return;
             }
         }
     }
@@ -169,9 +164,7 @@ fn main() {
                 out.write_all(&frame).unwrap();
                 out.flush().unwrap();
 
-                if !drain_stdin() {
-                    return;
-                }
+                drain_stdin();
             }
         } else {
             out.write_all(&pcm).unwrap();
