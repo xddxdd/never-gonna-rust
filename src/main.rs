@@ -132,7 +132,7 @@ fn drain_stdin() -> bool {
     let mut stdin = io::stdin().lock();
     loop {
         match stdin.read(&mut buf) {
-            Ok(0) => return false,
+            Ok(0) => return true,
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => return true,
             Err(_) => return false,
             Ok(_) => continue,
