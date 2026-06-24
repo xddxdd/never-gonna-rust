@@ -1,6 +1,5 @@
 use rand::Rng;
-use std::io::{self, Read, Write};
-use std::os::raw::c_int;
+use std::io::{self, Write};
 use std::os::unix::io::AsRawFd;
 
 const NEVER: &[u8] = include_bytes!("../music/never.wav");
@@ -112,30 +111,37 @@ fn stereo_to_mono(stereo: &[u8]) -> Vec<u8> {
     mono
 }
 
-fn set_stdin_nonblocking() {
-    extern "C" {
-        fn fcntl(fd: c_int, cmd: c_int, arg: c_int) -> c_int;
-    }
-    const F_GETFL: c_int = 3;
-    const F_SETFL: c_int = 4;
-    const O_NONBLOCK: c_int = 2048;
-
-    unsafe {
-        let fd = io::stdin().as_raw_fd();
-        let flags = fcntl(fd, F_GETFL, 0);
-        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-    }
-}
-
 fn drain_stdin() -> bool {
+    let fd = io::stdin().as_raw_fd();
     let mut buf = [0u8; 1024];
-    let mut stdin = io::stdin().lock();
     loop {
-        match stdin.read(&mut buf) {
-            Ok(0) => return true,
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => return true,
-            Err(_) => return false,
-            Ok(_) => continue,
+        unsafe {
+            let mut readfds: libc::fd_set = std::mem::zeroed();
+            libc::FD_ZERO(&mut readfds);
+            libc::FD_SET(fd, &mut readfds);
+            let mut timeout: libc::timeval = std::mem::zeroed();
+            let ret = libc::select(
+                fd + 1,
+                &mut readfds,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                &mut timeout,
+            );
+            if ret == 0 {
+                return true;
+            }
+            if ret < 0 {
+                return false;
+            }
+        }
+        unsafe {
+            let n = libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len());
+            if n == 0 {
+                return false;
+            }
+            if n < 0 {
+                return false;
+            }
         }
     }
 }
@@ -148,10 +154,6 @@ fn main() {
 
     let mut rng = rand::thread_rng();
     let mut state = State::Never;
-
-    if audiosocket {
-        set_stdin_nonblocking();
-    }
 
     loop {
         let pcm = extract_pcm_data(state.wav_data());
