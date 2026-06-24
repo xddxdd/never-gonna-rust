@@ -1,5 +1,5 @@
 use rand::Rng;
-use std::io::{self, Write};
+use std::io;
 use std::os::unix::io::AsRawFd;
 use std::time::{Duration, Instant};
 
@@ -112,6 +112,13 @@ fn stereo_to_mono(stereo: &[u8]) -> Vec<u8> {
     mono
 }
 
+fn write_all(fd: i32, buf: &[u8]) {
+    let written = unsafe { libc::write(fd, buf.as_ptr() as *const libc::c_void, buf.len()) };
+    if written < 0 || written as usize != buf.len() {
+        panic!("write failed");
+    }
+}
+
 fn drain_stdin() {
     let fd = io::stdin().as_raw_fd();
     let mut buf = [0u8; 1024];
@@ -144,11 +151,13 @@ fn drain_stdin() {
 fn main() {
     let audiosocket = std::env::args().any(|a| a == "--audiosocket");
 
-    let stdout = io::stdout();
-    let mut out = io::BufWriter::new(stdout.lock());
+    let mut next_frame = Instant::now();
+    const FRAME_INTERVAL: Duration = Duration::from_millis(20);
 
     let mut rng = rand::thread_rng();
     let mut state = State::Never;
+
+    let fd = std::io::stdout().as_raw_fd();
 
     loop {
         let pcm = extract_pcm_data(state.wav_data());
@@ -161,14 +170,20 @@ fn main() {
                 frame.push(0x15);
                 frame.extend_from_slice(&len.to_be_bytes());
                 frame.extend_from_slice(chunk);
-                out.write_all(&frame).unwrap();
-                out.flush().unwrap();
+                write_all(fd, &frame);
 
                 drain_stdin();
+
+                next_frame += FRAME_INTERVAL;
+                let now = Instant::now();
+                if next_frame > now {
+                    std::thread::sleep(next_frame - now);
+                } else {
+                    next_frame = now;
+                }
             }
         } else {
-            out.write_all(&pcm).unwrap();
-            out.flush().unwrap();
+            write_all(fd, &pcm);
         }
 
         state = match state {
