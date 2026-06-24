@@ -18,6 +18,14 @@ nix build
 
 The program runs indefinitely, outputting 16-bit stereo 44100 Hz PCM.
 
+### AudioSocket mode
+
+With `--audiosocket`, output is encoded as [AudioSocket](https://docs.asterisk.org/Configuration/Channel-Drivers/AudioSocket/) frames (type `0x15`: signed linear 16-bit 44100 Hz mono PCM, little-endian) split into ~20ms chunks. Stdin is set to nonblocking mode and drained after each frame; the program exits cleanly when stdin closes.
+
+```
+./result/bin/never-gonna --audiosocket | ...
+```
+
 ## Markov Chain
 
 The chain always starts at **NEVER → GONNA**, then branches randomly:

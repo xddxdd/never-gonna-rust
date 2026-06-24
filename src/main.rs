@@ -1,5 +1,7 @@
 use rand::Rng;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
+use std::os::raw::c_int;
+use std::os::unix::io::AsRawFd;
 
 const NEVER: &[u8] = include_bytes!("../music/never.wav");
 const GONNA: &[u8] = include_bytes!("../music/gonna.wav");
@@ -97,17 +99,82 @@ fn extract_pcm_data(wav_bytes: &[u8]) -> Vec<u8> {
     panic!("No data chunk found in WAV file");
 }
 
+fn stereo_to_mono(stereo: &[u8]) -> Vec<u8> {
+    let sample_count = stereo.len() / 4;
+    let mut mono = Vec::with_capacity(sample_count * 2);
+    for i in 0..sample_count {
+        let off = i * 4;
+        let left = i16::from_le_bytes([stereo[off], stereo[off + 1]]);
+        let right = i16::from_le_bytes([stereo[off + 2], stereo[off + 3]]);
+        let mixed = ((left as i32 + right as i32) / 2) as i16;
+        mono.extend_from_slice(&mixed.to_le_bytes());
+    }
+    mono
+}
+
+fn set_stdin_nonblocking() {
+    extern "C" {
+        fn fcntl(fd: c_int, cmd: c_int, arg: c_int) -> c_int;
+    }
+    const F_GETFL: c_int = 3;
+    const F_SETFL: c_int = 4;
+    const O_NONBLOCK: c_int = 2048;
+
+    unsafe {
+        let fd = io::stdin().as_raw_fd();
+        let flags = fcntl(fd, F_GETFL, 0);
+        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    }
+}
+
+fn drain_stdin() -> bool {
+    let mut buf = [0u8; 1024];
+    let mut stdin = io::stdin().lock();
+    loop {
+        match stdin.read(&mut buf) {
+            Ok(0) => return false,
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => return true,
+            Err(_) => return false,
+            Ok(_) => continue,
+        }
+    }
+}
+
 fn main() {
+    let audiosocket = std::env::args().any(|a| a == "--audiosocket");
+
     let stdout = io::stdout();
     let mut out = io::BufWriter::new(stdout.lock());
 
     let mut rng = rand::thread_rng();
     let mut state = State::Never;
 
+    if audiosocket {
+        set_stdin_nonblocking();
+    }
+
     loop {
         let pcm = extract_pcm_data(state.wav_data());
-        out.write_all(&pcm).unwrap();
-        out.flush().unwrap();
+
+        if audiosocket {
+            let mono = stereo_to_mono(&pcm);
+            for chunk in mono.chunks(1764) {
+                let len = chunk.len() as u16;
+                let mut frame = Vec::with_capacity(3 + chunk.len());
+                frame.push(0x15);
+                frame.extend_from_slice(&len.to_be_bytes());
+                frame.extend_from_slice(chunk);
+                out.write_all(&frame).unwrap();
+                out.flush().unwrap();
+
+                if !drain_stdin() {
+                    return;
+                }
+            }
+        } else {
+            out.write_all(&pcm).unwrap();
+            out.flush().unwrap();
+        }
 
         state = match state {
             State::Never => State::Gonna,
