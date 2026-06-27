@@ -31,6 +31,14 @@
             version = "0.1.0";
             src = ./.;
             cargoLock.lockFile = ./Cargo.lock;
+
+            meta = {
+              description = "Rust program that plays fragments of \"Never Gonna Give You Up\" in a Markov chain fashion";
+              homepage = "https://github.com/xddxdd/never-gonna-rust";
+              license = pkgs.lib.licenses.mit;
+              mainProgram = "never-gonna";
+              maintainers = with pkgs.lib.maintainers; [ xddxdd ];
+            };
           };
 
           packages.default = config.packages.never-gonna;
