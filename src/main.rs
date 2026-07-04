@@ -112,10 +112,28 @@ fn stereo_to_mono(stereo: &[u8]) -> Vec<u8> {
     mono
 }
 
-fn write_all(fd: i32, buf: &[u8]) {
-    let written = unsafe { libc::write(fd, buf.as_ptr() as *const libc::c_void, buf.len()) };
-    if written < 0 || written as usize != buf.len() {
-        panic!("write failed");
+fn write_all(fd: i32, mut buf: &[u8]) {
+    const MAX_RETRIES: u32 = 100;
+    const RETRY_INTERVAL: Duration = Duration::from_millis(20);
+
+    let mut retries = 0;
+    while !buf.is_empty() {
+        let written = unsafe { libc::write(fd, buf.as_ptr() as *const libc::c_void, buf.len()) };
+        if written >= 0 {
+            buf = &buf[written as usize..];
+            retries = 0;
+            continue;
+        }
+        let err = unsafe { *libc::__errno_location() };
+        if err == libc::EAGAIN || err == libc::EWOULDBLOCK {
+            if retries >= MAX_RETRIES {
+                panic!("write failed: asterisk not draining after {} retries", MAX_RETRIES);
+            }
+            retries += 1;
+            std::thread::sleep(RETRY_INTERVAL);
+            continue;
+        }
+        panic!("write failed: {}", std::io::Error::last_os_error());
     }
 }
 
